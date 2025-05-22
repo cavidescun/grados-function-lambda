@@ -1,0 +1,26 @@
+{
+  "name": "grados",
+  "version": "1.0.0",
+  "description": "AWS Lambda function to process PDF documents from Google Drive",
+  "main": "src/index.js",
+  "scripts": {
+    "setup-local": "node setup-google-auth.js",
+    "setup-lambda": "node setup-lambda-tokens.js",
+    "test": "node local-test.js",
+    "build": "node build-lambda.js",
+    "build-simple": "zip -r lambda-function.zip node_modules src package.json dictionaries -x '*.env' 'setup-*.js' 'local-test.js' 'google-tokens.json' 'lambda-build/*'",
+    "deploy-prep": "npm install --production && npm run build"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "dependencies": {
+    "axios": "^1.6.2",
+    "googleapis": "^129.0.0",
+    "fs-extra": "^11.2.0",
+    "aws-sdk": "^2.1489.0"
+  },
+  "devDependencies": {
+    "dotenv": "^16.3.1"
+  }
+}
