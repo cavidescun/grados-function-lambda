@@ -1,6 +1,6 @@
 const fs = require('fs-extra');
 const path = require('path');
-const { extractTextFromDocument, validateTextWithDictionary, extractInformation } = require('./textractService');
+const { extractTextFromDocument, validateTextWithDictionary, extractInformation, validateCUNInstitution } = require('./textractService');
 const { getDictionaryForDocumentType } = require('./dictionaryService');
 
 async function processDocuments(inputData, downloadedFiles, documentUrls) {
@@ -16,17 +16,16 @@ async function processDocuments(inputData, downloadedFiles, documentUrls) {
     ProgramaDelCualSolicita: inputData.Programa_del_cual_esta_solicitando_grado || '',
     CorreoInsitucional: inputData.Correo_electronico_institucional || '',
     CorreoPersonal: inputData.Correo_electronico_personal || '',
-    
-    FotocopiaDocumento: "Documento no adjunto",
-    DiplomayActaGradoBachiller: "Documento no adjunto",
-    DiplomayActaGradoTecnico: "Documento no adjunto",
-    DiplomayActaGradoTecnologo: "Documento no adjunto",
-    DiplomayActaGradoPregrado: "Documento no adjunto",
-    ResultadoSaberProDelNivelParaGrado: "Documento no adjunto",
-    ExamenIcfes_11: "Documento no adjunto",
-    RecibiDePagoDerechosDeGrado: "Documento no adjunto",
-    Encuesta_M0: "Documento no adjunto",
-    Acta_Homologacion: "Documento no adjunto",
+    FotocopiaDocumento: "N/A",
+    DiplomayActaGradoBachiller: "N/A",
+    DiplomayActaGradoTecnico: "N/A",
+    DiplomayActaGradoTecnologo: "N/A",
+    DiplomayActaGradoPregrado: "N/A",
+    ResultadoSaberProDelNivelParaGrado: "N/A",
+    ExamenIcfes_11: "N/A",
+    RecibiDePagoDerechosDeGrado: "N/A",
+    Encuesta_M0: "N/A",
+    Acta_Homologacion: "N/A",
     
     EK: "Extraccion Manual",
     Autorización_tratamiento_de_datos: inputData.Autorizacion_tratamiento_de_datos || '',
@@ -68,8 +67,8 @@ async function processDocumentType(documentMap, docType, output, outputField, in
   console.log(`[DOC] Procesando: ${docType} -> ${outputField}`);
   
   if (!documentMap[docType]) {
-    console.log(`[DOC] Documento ${docType} no encontrado`);
-    return;
+    console.log(`[DOC] Documento ${docType} no encontrado - mantiene estado N/A`);
+    return; 
   }
   
   try {
@@ -77,23 +76,40 @@ async function processDocumentType(documentMap, docType, output, outputField, in
     
     if (!await fileExists(file.path)) {
       console.log(`[DOC] Archivo ${docType} no válido`);
-      output[outputField] = "Revisión Manual";
+      output[outputField] = "Revision Manual";
       return;
     }
     
     const validationResult = await validateDocument(file, docType, inputData);
-    
-    output[outputField] = validationResult.status;
+
+    output[outputField] = mapDocumentStatus(validationResult.status);
     
     if (validationResult.extractedInfo) {
-      updateExtractedInformation(output, docType, validationResult.extractedInfo, inputData);
+      await updateExtractedInformation(output, docType, validationResult.extractedInfo, inputData);
     }
     
-    console.log(`[DOC] ${docType} procesado: ${validationResult.status}`);
+    console.log(`[DOC] ${docType} procesado: ${output[outputField]}`);
     
   } catch (error) {
     console.error(`[DOC] Error procesando ${docType}:`, error);
-    output[outputField] = "Revisión Manual";
+    output[outputField] = "Revision Manual";
+  }
+}
+
+function mapDocumentStatus(originalStatus) {
+  console.log(`[STATUS-MAP] Mapeando estado: "${originalStatus}"`);
+  
+  switch (originalStatus) {
+    case "Documento Valido":
+      return "Valido";
+    case "Revisión Manual":
+    case "Revision Manual":
+      return "Revision Manual";
+    case "Documento no adjunto":
+      return "N/A";
+    default:
+      console.warn(`[STATUS-MAP] Estado desconocido: ${originalStatus}, usando Revision Manual`);
+      return "Revision Manual";
   }
 }
 
@@ -139,7 +155,7 @@ async function validateDocument(file, docType, inputData) {
     
     if (isValidByText) {
       console.log(`[VALIDATE] Documento válido por contenido`);
-      const extractedInfo = extractInformation(extractedText, docType);
+      const extractedInfo = await extractInformation(extractedText, docType);
       return { 
         status: "Documento Valido", 
         extractedInfo: extractedInfo,
@@ -195,7 +211,7 @@ async function alternativeValidation(file, docType, fileStats) {
   return { status: "Revisión Manual" };
 }
 
-function updateExtractedInformation(output, docType, extractedInfo, inputData) {
+async function updateExtractedInformation(output, docType, extractedInfo, inputData) {
   console.log(`[UPDATE] Actualizando información extraída para: ${docType}`);
   
   if (docType === 'cedula' && extractedInfo.numDocumento) {
@@ -217,14 +233,39 @@ function updateExtractedInformation(output, docType, extractedInfo, inputData) {
   }
   
   if (docType === 'prueba_tt') {
+    console.log(`[UPDATE] Procesando información específica de TyT`);
+
     if (extractedInfo.registroEK) {
       output.EK = extractedInfo.registroEK;
+      console.log(`[UPDATE] EK extraído: ${extractedInfo.registroEK}`);
     }
+
+    if (extractedInfo.numDocumento) {
+      output.Num_Documento_Extraido = extractedInfo.numDocumento;
+      console.log(`[UPDATE] Número documento extraído: ${extractedInfo.numDocumento}`);
+
+      const inputDocNum = (output.NumeroDocumento || '').replace(/\D/g, '');
+      const extractedDocNum = extractedInfo.numDocumento.replace(/\D/g, '');
+      output.Num_Doc_Valido = (extractedDocNum === inputDocNum) ? "SI" : "NO";
+      console.log(`[UPDATE] Validación documento - Input: ${inputDocNum}, Extraído: ${extractedDocNum}, Válido: ${output.Num_Doc_Valido}`);
+    }
+
+    if (extractedInfo.institucion) {
+      output.Institucion_Extraida = extractedInfo.institucion;
+      console.log(`[UPDATE] Institución extraída: ${extractedInfo.institucion}`);
+
+      output.Institucion_Valida = await validateCUNInstitution(extractedInfo.institucion);
+      console.log(`[UPDATE] Institución válida (CUN): ${output.Institucion_Valida}`);
+    }
+
     if (extractedInfo.programa) {
       output.Programa_Extraido = extractedInfo.programa;
+      console.log(`[UPDATE] Programa extraído: ${extractedInfo.programa}`);
     }
+
     if (extractedInfo.fechaPresentacion) {
       output.Fecha_Presentacion_Extraida = extractedInfo.fechaPresentacion;
+      console.log(`[UPDATE] Fecha presentación extraída: ${extractedInfo.fechaPresentacion}`);
     }
   }
 }

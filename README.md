@@ -174,11 +174,11 @@ La función retorna un JSON estructurado con el estado de validación de cada do
   "NombreCompleto": "NOMBRE, APELLIDO",
   "TipoDocumento": "CC Cédula de ciudadanía",
   "NumeroDocumento": "1234567890",
-  "FotocopiaDocumento": "Documento Valido",
-  "DiplomayActaGradoBachiller": "Documento Valido",
-  "ExamenIcfes_11": "Documento Valido",
-  "ResultadoSaberProDelNivelParaGrado": "Documento Valido",
-  "Encuesta_M0": "Documento Valido",
+  "FotocopiaDocumento": "Valido",
+  "DiplomayActaGradoBachiller": "Valido",
+  "ExamenIcfes_11": "Valido",
+  "ResultadoSaberProDelNivelParaGrado": "Valido",
+  "Encuesta_M0": "N/A",
   "EK": "EK123456789",
   "Num_Documento_Extraido": "1234567890",
   "Num_Doc_Valido": "SI"
@@ -187,9 +187,9 @@ La función retorna un JSON estructurado con el estado de validación de cada do
 
 ### Estados Posibles
 
-- **"Documento Valido"**: El documento fue validado exitosamente
-- **"Revisión Manual"**: El documento requiere revisión manual
-- **"Documento no adjunto"**: No se proporcionó URL para este tipo de documento
+- **"Valido"**: El documento fue procesado exitosamente y es válido
+- **"Revision Manual"**: El documento requiere revisión manual por un operador  
+- **"N/A"**: No se proporcionó URL para este tipo de documento
 
 ## Scripts Disponibles
 

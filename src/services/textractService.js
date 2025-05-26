@@ -1,5 +1,6 @@
 const AWS = require('aws-sdk');
 const fs = require('fs-extra');
+const { getCUNInstitutionsDictionary } = require('./dictionaryService');
 
 const textract = new AWS.Textract({
   httpOptions: {
@@ -110,13 +111,123 @@ function validateTextWithDictionary(text, dictionary, minMatches = 2) {
   return false;
 }
 
-function extractInformation(text, documentType) {
+async function extractTyTInformation(text) {
+  console.log(`[EXTRACT-TYT] Extrayendo información específica de TyT`);
+  
+  if (!text) {
+    console.log(`[EXTRACT-TYT] Texto vacío`);
+    return {};
+  }
+  
+  const extractedInfo = {};
+  console.log(`[EXTRACT-TYT] Buscando código EK...`);
+  const ekRegex = /EK\s*[\d]+/gi;
+  const ekMatches = text.match(ekRegex);
+  if (ekMatches && ekMatches.length > 0) {
+    extractedInfo.registroEK = ekMatches[0].replace(/\s+/g, '').toUpperCase();
+    console.log(`[EXTRACT-TYT] EK encontrado: ${extractedInfo.registroEK}`);
+  } else {
+    console.log(`[EXTRACT-TYT] No se encontró código EK`);
+  }
+  console.log(`[EXTRACT-TYT] Buscando número de documento...`);
+  const docRegex = /(?:documento|identificación|cedula|c\.c|cc|id)[\s:]*(\d{6,12})/gi;
+  const docMatches = text.match(docRegex);
+  if (docMatches && docMatches.length > 0) {
+    const numDocMatch = docMatches[0].match(/(\d{6,12})/);
+    if (numDocMatch) {
+      extractedInfo.numDocumento = numDocMatch[1];
+      console.log(`[EXTRACT-TYT] Número de documento encontrado: ${extractedInfo.numDocumento}`);
+    }
+  } else {
+    const numRegex = /\b\d{8,12}\b/g;
+    const numMatches = text.match(numRegex);
+    if (numMatches && numMatches.length > 0) {
+      extractedInfo.numDocumento = numMatches[0];
+      console.log(`[EXTRACT-TYT] Posible número de documento encontrado: ${extractedInfo.numDocumento}`);
+    } else {
+      console.log(`[EXTRACT-TYT] No se encontró número de documento`);
+    }
+  }
+  console.log(`[EXTRACT-TYT] Buscando institución...`);
+  try {
+    const cunInstitutions = await getCUNInstitutionsDictionary();
+    const normalizedText = text.toLowerCase();
+    let institutionFound = false;
+    
+    for (const institution of cunInstitutions) {
+      const normalizedInstitution = institution.toLowerCase();
+      if (normalizedText.includes(normalizedInstitution)) {
+        extractedInfo.institucion = institution;
+        institutionFound = true;
+        console.log(`[EXTRACT-TYT] Institución encontrada: ${institution}`);
+        break;
+      }
+    }
+    
+    if (!institutionFound) {
+      extractedInfo.institucion = "Revision Manual";
+      console.log(`[EXTRACT-TYT] No se encontró institución CUN válida`);
+    }
+  } catch (error) {
+    console.error(`[EXTRACT-TYT] Error cargando diccionario CUN:`, error.message);
+    extractedInfo.institucion = "Revision Manual";
+  }
+
+  console.log(`[EXTRACT-TYT] Buscando programa...`);
+  const programRegex = /(?:programa|carrera|título)[\s:]*([^.\n\r]{10,100})/gi;
+  const programMatches = text.match(programRegex);
+  if (programMatches && programMatches.length > 0) {
+    let programa = programMatches[0].replace(/(?:programa|carrera|título)[\s:]*/gi, '').trim();
+    programa = programa.split(/[.\n\r]/)[0].trim();
+    if (programa.length > 5) {
+      extractedInfo.programa = programa;
+      console.log(`[EXTRACT-TYT] Programa encontrado: ${programa}`);
+    }
+  } else {
+    const techRegex = /(?:técnico|tecnico|tecnólogo|tecnologo|profesional)\s+en\s+([^.\n\r]{5,80})/gi;
+    const techMatches = text.match(techRegex);
+    if (techMatches && techMatches.length > 0) {
+      extractedInfo.programa = techMatches[0].trim();
+      console.log(`[EXTRACT-TYT] Programa técnico encontrado: ${extractedInfo.programa}`);
+    } else {
+      console.log(`[EXTRACT-TYT] No se encontró programa específico`);
+    }
+  }
+
+  console.log(`[EXTRACT-TYT] Buscando fecha de presentación...`);
+  const dateRegex = /(?:fecha|presentación|aplicación|realización)[\s:]*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4}|\d{1,2}\s+de\s+\w+\s+de\s+\d{4})/gi;
+  const dateMatches = text.match(dateRegex);
+  if (dateMatches && dateMatches.length > 0) {
+    const fechaMatch = dateMatches[0].match(/(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4}|\d{1,2}\s+de\s+\w+\s+de\s+\d{4})/);
+    if (fechaMatch) {
+      extractedInfo.fechaPresentacion = fechaMatch[1];
+      console.log(`[EXTRACT-TYT] Fecha de presentación encontrada: ${extractedInfo.fechaPresentacion}`);
+    }
+  } else {
+    const generalDateRegex = /\b\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4}\b/g;
+    const generalDates = text.match(generalDateRegex);
+    if (generalDates && generalDates.length > 0) {
+      extractedInfo.fechaPresentacion = generalDates[0];
+      console.log(`[EXTRACT-TYT] Posible fecha encontrada: ${extractedInfo.fechaPresentacion}`);
+    } else {
+      console.log(`[EXTRACT-TYT] No se encontró fecha de presentación`);
+    }
+  }
+  
+  return extractedInfo;
+}
+
+async function extractInformation(text, documentType) {
   console.log(`[EXTRACT] Extrayendo información para: ${documentType}`);
   
   if (!text) {
     return {};
   }
-  
+
+  if (documentType === 'prueba_tt') {
+    return await extractTyTInformation(text);
+  }
+
   const normalizedText = text.toLowerCase();
   const extractedInfo = {};
   
@@ -140,22 +251,42 @@ function extractInformation(text, documentType) {
         console.log(`[EXTRACT] Registro AC: ${extractedInfo.registroAC}`);
       }
       break;
-      
-    case 'prueba_tt':
-      const ekRegex = /ek[\d]+/i;
-      const ekMatch = normalizedText.match(ekRegex);
-      if (ekMatch) {
-        extractedInfo.registroEK = ekMatch[0].toUpperCase();
-        console.log(`[EXTRACT] Registro EK: ${extractedInfo.registroEK}`);
-      }
-      break;
   }
   
   return extractedInfo;
 }
 
+async function validateCUNInstitution(extractedInstitution) {
+  console.log(`[VALIDATE-CUN] Validando institución: ${extractedInstitution}`);
+  
+  if (!extractedInstitution || extractedInstitution === "Revision Manual") {
+    console.log(`[VALIDATE-CUN] Institución requiere revisión manual`);
+    return "NO";
+  }
+  
+  try {
+    const cunInstitutions = await getCUNInstitutionsDictionary();
+    const normalizedExtracted = extractedInstitution.toLowerCase();
+    
+    for (const cunVariant of cunInstitutions) {
+      if (normalizedExtracted.includes(cunVariant.toLowerCase()) || 
+          cunVariant.toLowerCase().includes(normalizedExtracted)) {
+        console.log(`[VALIDATE-CUN] Institución válida encontrada: ${cunVariant}`);
+        return "SI";
+      }
+    }
+    
+    console.log(`[VALIDATE-CUN] Institución no es CUN válida`);
+    return "NO";
+  } catch (error) {
+    console.error(`[VALIDATE-CUN] Error validando institución:`, error.message);
+    return "NO";
+  }
+}
+
 module.exports = {
   extractTextFromDocument,
   validateTextWithDictionary,
-  extractInformation
+  extractInformation,
+  validateCUNInstitution
 };

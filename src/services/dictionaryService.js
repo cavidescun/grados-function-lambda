@@ -11,7 +11,8 @@ const dictionaryMapping = {
   'icfes': 'DiccionarioIcfes.txt',
   'recibo_pago': 'DiccionarioPagoDerechosDeGrado.txt',
   'encuesta_m0': 'DiccionarioEncuestaSeguimiento.txt',
-  'acta_homologacion': 'DiccionarioActaHomologacion.txt'
+  'acta_homologacion': 'DiccionarioActaHomologacion.txt',
+  'cun_institutions': 'DiccionarioCUN.txt'
 };
 
 const dictionaryCache = {};
@@ -66,6 +67,11 @@ async function getDictionaryForDocumentType(documentType) {
   return await loadDictionary(dictionaryFileName);
 }
 
+async function getCUNInstitutionsDictionary() {
+  console.log(`[DICT] Solicitando diccionario de instituciones CUN`);
+  return await loadDictionary('DiccionarioCUN.txt');
+}
+
 function getEmbeddedDictionary(dictionaryFileName) {
   console.log(`[DICT] Generando diccionario embebido para: ${dictionaryFileName}`);
   
@@ -108,6 +114,27 @@ function getEmbeddedDictionary(dictionaryFileName) {
     'DiccionarioActaHomologacion.txt': [
       'Homologación', 'Homologacion', 'Materias', 'asignaturas',
       'créditos', 'creditos', 'equivalencia'
+    ],
+    'DiccionarioCUN.txt': [
+      'Corporación Unificada Nacional de Educación Superior',
+      'Corporacion Unificada Nacional de Educacion Superior',
+      'CUN', 'C.U.N.',
+      'Corporación Unificada N. de E. Superior',
+      'Corporación Unificada Nacional de E. Superior',
+      'Corporación Unificada Nacional de Educación Sup.',
+      'Corporación Unificada Nacional de Educ. Superior',
+      'Corporacion Unificada Nacional de Educacion Sup.',
+      'Corporacion Unificada N. de E. Superior',
+      'Corporacion Unificada Nacional de E. Superior',
+      'Corporacion Unificada Nacional de Educación Sup.',
+      'Corporacion Unificada Nacional de Educ. Superior',
+      'Corporacion Unificada Nacional De Educacion Superior-Cun-Bogotá D.C.',
+      'Corporacion Unificada Nacional De Educacion Superior-Cun',
+      'Corporacion Unificada Nacional',
+      'Corporacion Unificada',
+      'CORPORACION UNIFICADA NACIONAL',
+      'Nacional De Educacion Superior',
+      'cun'
     ]
   };
   
@@ -130,5 +157,6 @@ async function preloadDictionaries() {
 
 module.exports = {
   getDictionaryForDocumentType,
+  getCUNInstitutionsDictionary,
   preloadDictionaries
 };
