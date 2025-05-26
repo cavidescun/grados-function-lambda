@@ -11,34 +11,118 @@ Una función AWS Lambda para procesar documentos PDF de Google Drive, extraer in
 
 ## Requisitos
 
-- Node.js 22+
+- Node.js 18+
 - AWS Lambda
-- Permisos para acceder a archivos en Google Drive
+- Cuenta de Google Cloud con API de Google Drive habilitada
 
 ## Estructura del Proyecto
+```
 pdf-processor-lambda/
 ├── src/
 │   ├── index.js                 // Punto de entrada de la función Lambda
 │   ├── services/
 │   │   ├── documentService.js   // Manejo de validación y extracción de PDF
-│   │   └── driveService.js      // Interacción con Google Drive
+│   │   ├── driveService.js      // Interacción con Google Drive
+│   │   ├── googleAuthLambda.js  // Autenticación Google para Lambda
+│   │   ├── dictionaryService.js // Manejo de diccionarios de validación
+│   │   └── textractService.js   // Integración con AWS Textract
 │   └── utils/
 │       └── tempStorage.js       // Manejo de almacenamiento temporal
+├── dictionaries/                // Diccionarios de validación por tipo de documento
 ├── package.json
-├── serverless.yml               // Configuración de despliegue
+├── build-lambda.js              // Script de construcción para despliegue
+├── setup-lambda-tokens.js       // Script de configuración de tokens Google
 └── README.md
+```
 
 ## Configuración
 
-Antes de desplegar la función, necesitarás:
+### 1. Configurar Google Cloud Console
 
-1. Credenciales de API de Google
-   - Client ID
-   - Client Secret
+1. Ve a [Google Cloud Console](https://console.cloud.google.com/)
+2. Crea un nuevo proyecto o selecciona uno existente
+3. Habilita la API de Google Drive
+4. Ve a "Credenciales" → "Crear credenciales" → "ID de cliente OAuth 2.0"
+5. Configura como "Aplicación de escritorio"
+6. Descarga las credenciales y guarda `client_id` y `client_secret`
 
-2. Configurar Variables de Entorno:
-   - `GOOGLE_CLIENT_ID`: Tu Client ID de Google
-   - `GOOGLE_CLIENT_SECRET`: Tu Client Secret de Google
+### 2. Configurar Variables de Entorno Locales
+
+Crea un archivo `.env` en el directorio raíz:
+
+```bash
+GOOGLE_CLIENT_ID=tu_client_id_aqui
+GOOGLE_CLIENT_SECRET=tu_client_secret_aqui
+```
+
+### 3. Generar Refresh Token
+
+Ejecuta el script de configuración:
+
+```bash
+npm run setup-tokens
+```
+
+Este script:
+1. Te pedirá autorizar la aplicación en tu navegador
+2. Generará un refresh token
+3. Creará un archivo `lambda-env-variables.txt` con las variables necesarias
+
+### 4. Configurar Variables de Entorno en AWS Lambda
+
+En tu función Lambda, configura estas variables de entorno:
+
+```bash
+GOOGLE_CLIENT_ID=tu_client_id_aqui
+GOOGLE_CLIENT_SECRET=tu_client_secret_aqui
+GOOGLE_REFRESH_TOKEN=tu_refresh_token_aqui
+```
+
+## Despliegue
+
+### 1. Construir el paquete
+
+```bash
+npm run build
+```
+
+Esto generará `lambda-deployment.zip` listo para subir a AWS Lambda.
+
+### 2. Configurar AWS Lambda
+
+1. **Runtime**: `nodejs18.x`
+2. **Handler**: `src/index.handler`
+3. **Timeout**: 300 segundos (5 minutos)
+4. **Memoria**: 1024 MB o más
+5. **Variables de entorno**: Las 3 variables de Google configuradas arriba
+
+### 3. Permisos IAM
+
+Tu función Lambda necesita estos permisos:
+
+```json
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "textract:DetectDocumentText"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                "logs:CreateLogGroup",
+                "logs:CreateLogStream",
+                "logs:PutLogEvents"
+            ],
+            "Resource": "arn:aws:logs:*:*:*"
+        }
+    ]
+}
+```
 
 ## Uso
 
@@ -63,9 +147,136 @@ La función Lambda espera recibir un objeto JSON con la siguiente estructura:
   "Icfes": "https://drive.google.com/file/d/ID/view",
   "Prueba_T_T": "https://drive.google.com/file/d/ID/view",
   "Soporte_de_encuesta_momento_0": "https://drive.google.com/file/d/ID/view",
-  "Autorizacion_tratamiento_de_datos": "Agreed",
-  "googleCredentials": {
-    "client_id": "tu_client_id",
-    "client_secret": "tu_client_secret"
-  }
+  "Autorizacion_tratamiento_de_datos": "Agreed"
 }
+```
+
+### Tipos de Documentos Soportados
+
+- **Copia_de_cedula**: Cédula de ciudadanía
+- **Diploma_y_acta_de_bachiller**: Diploma de bachillerato
+- **diploma_tecnico**: Diploma técnico
+- **diploma_tecnologo**: Diploma tecnólogo  
+- **Titulo_profesional**: Título profesional universitario
+- **Icfes**: Resultados ICFES Saber 11
+- **Prueba_T_T**: Resultados Saber TyT
+- **Soporte_de_encuesta_momento_0**: Encuesta de seguimiento
+- **Acta_de_homologacion**: Acta de homologación
+- **Recibo_de_pago_derechos_de_grado**: Recibo de pago
+
+## Respuesta
+
+La función retorna un JSON estructurado con el estado de validación de cada documento:
+
+```json
+{
+  "ID": 2521,
+  "NombreCompleto": "NOMBRE, APELLIDO",
+  "TipoDocumento": "CC Cédula de ciudadanía",
+  "NumeroDocumento": "1234567890",
+  "FotocopiaDocumento": "Documento Valido",
+  "DiplomayActaGradoBachiller": "Documento Valido",
+  "ExamenIcfes_11": "Documento Valido",
+  "ResultadoSaberProDelNivelParaGrado": "Documento Valido",
+  "Encuesta_M0": "Documento Valido",
+  "EK": "EK123456789",
+  "Num_Documento_Extraido": "1234567890",
+  "Num_Doc_Valido": "SI"
+}
+```
+
+### Estados Posibles
+
+- **"Documento Valido"**: El documento fue validado exitosamente
+- **"Revisión Manual"**: El documento requiere revisión manual
+- **"Documento no adjunto"**: No se proporcionó URL para este tipo de documento
+
+## Scripts Disponibles
+
+### `npm run build`
+Construye el paquete ZIP para despliegue en AWS Lambda.
+
+### `npm run setup-tokens`
+Configura los tokens de Google Drive necesarios para la autenticación.
+
+### `npm run clean`
+Limpia archivos temporales y de build.
+
+### `npm run validate`
+Valida la sintaxis del código JavaScript.
+
+## Solución de Problemas
+
+### Error: "ERROR_TOKENS_NO_CONFIGURADOS"
+**Causa**: Las variables de entorno de Google no están configuradas.
+**Solución**: 
+1. Ejecutar `npm run setup-tokens`
+2. Configurar las variables de entorno en AWS Lambda
+
+### Error: "ERROR_PERMISOS_GOOGLE_DRIVE"
+**Causa**: Los archivos de Google Drive no son accesibles.
+**Soluciones**:
+1. Verificar que los archivos sean públicos
+2. Verificar que las URLs sean correctas
+3. Verificar que los tokens tengan permisos adecuados
+
+### Error: "HTML_FILE_DETECTED"
+**Causa**: Google Drive devolvió una página HTML en lugar del archivo.
+**Solución**: El sistema implementa validación por tamaño como alternativa.
+
+### Timeout en Lambda
+**Causa**: Procesamiento de muchos documentos o archivos grandes.
+**Soluciones**:
+1. Aumentar el timeout de Lambda (máximo 15 minutos)
+2. Aumentar la memoria asignada
+3. Procesar menos documentos por invocación
+
+## Arquitectura
+
+### Flujo de Procesamiento
+
+1. **Recepción**: Lambda recibe solicitud con URLs de Google Drive
+2. **Autenticación**: Se autentica con Google Drive usando refresh token
+3. **Descarga**: Descarga archivos desde Google Drive
+4. **Extracción**: Usa AWS Textract para extraer texto de documentos
+5. **Validación**: Compara texto extraído con diccionarios específicos
+6. **Respuesta**: Retorna resultados estructurados
+
+### Métodos de Validación
+
+1. **Por contenido**: Extrae texto con Textract y valida contra diccionarios
+2. **Por tamaño**: Para archivos no procesables, valida basándose en tamaño mínimo
+3. **Híbrido**: Combina ambos métodos para mayor robustez
+
+### Manejo de Errores
+
+- **Categorización automática** de tipos de error
+- **Fallback a descarga pública** si la autenticación falla
+- **Cleanup automático** de archivos temporales
+- **Logging detallado** para debugging
+
+## Seguridad
+
+- **Tokens OAuth2** con renovación automática
+- **Cleanup automático** de archivos temporales
+- **Variables de entorno** para credenciales sensibles
+- **Permisos mínimos** requeridos en AWS
+
+## Limitaciones
+
+- **Tamaño máximo de archivo**: Limitado por AWS Textract (5 MB para síncronos)
+- **Tipos de archivo**: Principalmente PDF, JPEG, PNG
+- **Timeout**: Máximo 15 minutos en AWS Lambda
+- **Memoria**: Dependiente de los archivos procesados
+
+## Contribución
+
+1. Fork el repositorio
+2. Crea una rama para tu feature (`git checkout -b feature/AmazingFeature`)
+3. Commit tus cambios (`git commit -m 'Add some AmazingFeature'`)
+4. Push a la rama (`git push origin feature/AmazingFeature`)
+5. Abre un Pull Request
+
+## Licencia
+
+Este proyecto está bajo la Licencia MIT - ver el archivo [LICENSE](LICENSE) para detalles.

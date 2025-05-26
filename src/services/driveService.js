@@ -184,18 +184,34 @@ async function downloadDocuments(fileUrls, googleCredentials = null) {
   
   console.log(`[DRIVE] Iniciando descarga de ${fileUrls.length} archivos`);
   console.log(`[DRIVE] Entorno: ${process.env.AWS_EXECUTION_ENV ? 'Lambda' : 'Local'}`);
-  
-  if (!googleCredentials && process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
-    try {
-      console.log(`[DRIVE] Intentando autenticación automática...`);
-      const authService = new GoogleAuthService(process.env.GOOGLE_CLIENT_ID, process.env.GOOGLE_CLIENT_SECRET);
-      googleCredentials = await authService.initializeAuth();
-      console.log(`[DRIVE] Autenticación automática exitosa`);
-    } catch (authError) {
-      console.log(`[DRIVE] Autenticación automática falló: ${authError.message}`);
-      if (authError.message.includes('NO_TOKENS_FOUND')) {
-        throw new Error(`ERROR_TOKENS_NO_CONFIGURADOS: Los tokens de Google Drive no están configurados en AWS Parameter Store. Ejecutar script de configuración.`);
+  if (!googleCredentials) {
+    const clientId = process.env.GOOGLE_CLIENT_ID;
+    const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+    const refreshToken = process.env.GOOGLE_REFRESH_TOKEN;
+    
+    if (clientId && clientSecret && refreshToken) {
+      try {
+        console.log(`[DRIVE] Intentando autenticación automática desde variables de entorno...`);
+        const authService = new GoogleAuthService(clientId, clientSecret);
+        googleCredentials = await authService.initializeAuth();
+        console.log(`[DRIVE] Autenticación automática exitosa`);
+      } catch (authError) {
+        console.log(`[DRIVE] Autenticación automática falló: ${authError.message}`);
+        if (authError.message.includes('NO_REFRESH_TOKEN')) {
+          throw new Error(`ERROR_TOKENS_NO_CONFIGURADOS: La variable GOOGLE_REFRESH_TOKEN no está configurada. Ejecutar script setup-lambda-tokens.js para obtenerla.`);
+        }
+        if (authError.message.includes('NO_CLIENT_ID')) {
+          throw new Error(`ERROR_TOKENS_NO_CONFIGURADOS: La variable GOOGLE_CLIENT_ID no está configurada.`);
+        }
+        if (authError.message.includes('NO_CLIENT_SECRET')) {
+          throw new Error(`ERROR_TOKENS_NO_CONFIGURADOS: La variable GOOGLE_CLIENT_SECRET no está configurada.`);
+        }
       }
+    } else {
+      console.log(`[DRIVE] Variables de entorno Google no configuradas completamente`);
+      console.log(`[DRIVE] CLIENT_ID: ${clientId ? 'Presente' : 'Ausente'}`);
+      console.log(`[DRIVE] CLIENT_SECRET: ${clientSecret ? 'Presente' : 'Ausente'}`);
+      console.log(`[DRIVE] REFRESH_TOKEN: ${refreshToken ? 'Presente' : 'Ausente'}`);
     }
   }
   

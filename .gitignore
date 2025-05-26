@@ -8,3 +8,15 @@ setup-dictionaries.js
 .env
 build/
 lambda-deployment.zip
+node_modules/
+.node_modules
+node_modules
+sample-input.json
+serverless.yml
+local-test.js
+setup-dictionaries.js
+.env
+build/
+lambda-deployment.zip
+lambda-env-variables.txt
+tokens-backup.txt
