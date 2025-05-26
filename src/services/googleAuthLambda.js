@@ -1,11 +1,9 @@
 const { google } = require('googleapis');
-const AWS = require('aws-sdk');
 
 class GoogleAuthLambda {
   constructor(clientId, clientSecret) {
     this.clientId = clientId;
     this.clientSecret = clientSecret;
-    this.parameterStore = new AWS.SSM();
     
     this.scopes = [
       'https://www.googleapis.com/auth/drive.readonly'
@@ -14,80 +12,36 @@ class GoogleAuthLambda {
   
   async getStoredTokens() {
     try {
-      console.log('[LAMBDA-AUTH] Obteniendo tokens de AWS Parameter Store...');
+      console.log('[LAMBDA-AUTH] Obteniendo tokens de variables de entorno...');
       
-      const promises = [
-        this.parameterStore.getParameter({
-          Name: '/google-drive/access-token',
-          WithDecryption: true
-        }).promise(),
-        
-        this.parameterStore.getParameter({
-          Name: '/google-drive/refresh-token',
-          WithDecryption: true
-        }).promise(),
-        
-        this.parameterStore.getParameter({
-          Name: '/google-drive/token-expiry',
-          WithDecryption: false
-        }).promise()
-      ];
-      
-      const [accessTokenParam, refreshTokenParam, expiryParam] = await Promise.all(promises);
-      
+      // Leer desde variables de entorno en lugar de Parameter Store
       const tokens = {
-        access_token: accessTokenParam.Parameter.Value,
-        refresh_token: refreshTokenParam.Parameter.Value,
-        expiry_date: parseInt(expiryParam.Parameter.Value)
+        access_token: process.env.GOOGLE_ACCESS_TOKEN,
+        refresh_token: process.env.GOOGLE_REFRESH_TOKEN,
+        expiry_date: process.env.GOOGLE_TOKEN_EXPIRY ? 
+          parseInt(process.env.GOOGLE_TOKEN_EXPIRY) : 
+          (Date.now() + 3600000) // 1 hora por defecto
       };
       
-      console.log('[LAMBDA-AUTH] Tokens obtenidos de Parameter Store exitosamente');
+      if (!tokens.refresh_token && !tokens.access_token) {
+        throw new Error('NO_TOKENS_FOUND: No se encontraron GOOGLE_ACCESS_TOKEN ni GOOGLE_REFRESH_TOKEN en variables de entorno');
+      }
+      
+      console.log('[LAMBDA-AUTH] Tokens obtenidos de variables de entorno exitosamente');
+      console.log(`[LAMBDA-AUTH] Access token: ${tokens.access_token ? 'Presente' : 'Ausente'}`);
+      console.log(`[LAMBDA-AUTH] Refresh token: ${tokens.refresh_token ? 'Presente' : 'Ausente'}`);
+      
       return tokens;
       
     } catch (error) {
-      console.log('[LAMBDA-AUTH] No se encontraron tokens almacenados:', error.message);
-      return null;
-    }
-  }
-  
-  async storeTokens(tokens) {
-    try {
-      console.log('[LAMBDA-AUTH] Guardando tokens en AWS Parameter Store...');
-      
-      const promises = [
-        this.parameterStore.putParameter({
-          Name: '/google-drive/access-token',
-          Value: tokens.access_token,
-          Type: 'SecureString',
-          Overwrite: true
-        }).promise(),
-        
-        this.parameterStore.putParameter({
-          Name: '/google-drive/refresh-token',
-          Value: tokens.refresh_token || '',
-          Type: 'SecureString',
-          Overwrite: true
-        }).promise(),
-        
-        this.parameterStore.putParameter({
-          Name: '/google-drive/token-expiry',
-          Value: tokens.expiry_date.toString(),
-          Type: 'String',
-          Overwrite: true
-        }).promise()
-      ];
-      
-      await Promise.all(promises);
-      console.log('[LAMBDA-AUTH] Tokens guardados exitosamente en Parameter Store');
-      
-    } catch (error) {
-      console.error('[LAMBDA-AUTH] Error guardando tokens:', error.message);
+      console.log('[LAMBDA-AUTH] Error obteniendo tokens:', error.message);
       throw error;
     }
   }
   
   async isTokenValid(tokens) {
     if (!tokens || !tokens.access_token) {
+      console.log('[LAMBDA-AUTH] No hay access_token para validar');
       return false;
     }
     
@@ -116,7 +70,8 @@ class GoogleAuthLambda {
       const { credentials } = await oauth2Client.refreshAccessToken();
       console.log('[LAMBDA-AUTH] Access token renovado exitosamente');
       
-      await this.storeTokens(credentials);
+      // Nota: Los nuevos tokens NO se guardan en variables de entorno
+      // porque no se pueden modificar durante la ejecución de Lambda
       return credentials;
       
     } catch (error) {
@@ -132,21 +87,29 @@ class GoogleAuthLambda {
       let tokens = await this.getStoredTokens();
       
       if (!tokens) {
-        throw new Error('NO_TOKENS_FOUND: No se encontraron tokens en Parameter Store');
+        throw new Error('NO_TOKENS_FOUND: No se encontraron tokens en variables de entorno');
       }
       
-      if (await this.isTokenValid(tokens)) {
+      // Si tenemos access_token y es válido, usarlo
+      if (tokens.access_token && await this.isTokenValid(tokens)) {
         console.log('[LAMBDA-AUTH] Usando access token existente');
         return tokens.access_token;
       }
       
+      // Si no tenemos access_token válido pero sí refresh_token, renovar
       if (tokens.refresh_token) {
-        console.log('[LAMBDA-AUTH] Token expirado, renovando...');
+        console.log('[LAMBDA-AUTH] Access token expirado o ausente, renovando con refresh_token...');
         const newTokens = await this.refreshAccessToken(tokens.refresh_token);
         return newTokens.access_token;
       }
       
-      throw new Error('REFRESH_TOKEN_MISSING: No hay refresh token disponible');
+      // Si no hay refresh_token, usar access_token aunque esté expirado (como último recurso)
+      if (tokens.access_token) {
+        console.log('[LAMBDA-AUTH] ADVERTENCIA: Usando access token posiblemente expirado');
+        return tokens.access_token;
+      }
+      
+      throw new Error('NO_VALID_TOKENS: No hay tokens válidos disponibles');
       
     } catch (error) {
       console.error('[LAMBDA-AUTH] Error obteniendo access token:', error.message);

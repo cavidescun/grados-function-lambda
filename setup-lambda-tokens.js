@@ -1,6 +1,6 @@
 require('dotenv').config();
 const AWS = require('aws-sdk');
-const GoogleAuthService = require('./src/services/googleAuthService');
+const GoogleAuthService = require('./src/services/googleAuthLambda');
 const readline = require('readline');
 
 // Configurar AWS

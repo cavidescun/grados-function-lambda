@@ -5,3 +5,6 @@ sample-input.json
 serverless.yml
 local-test.js
 setup-dictionaries.js
+.env
+build/
+lambda-deployment.zip
