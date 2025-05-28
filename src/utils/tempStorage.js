@@ -11,7 +11,6 @@ async function createTempDirectory() {
   
   await fs.ensureDir(tempDir);
   tempDirectories.push(tempDir);
-  console.log(`[TEMP] Created temporary directory: ${tempDir}`);
   return tempDir;
 }
 
@@ -19,7 +18,6 @@ async function cleanupTempFiles() {
   for (const dir of tempDirectories) {
     try {
       await fs.remove(dir);
-      console.log(`[TEMP] Cleaned up temporary directory: ${dir}`);
     } catch (error) {
       console.error(`[TEMP] Error cleaning up directory ${dir}:`, error);
     }

@@ -17,34 +17,21 @@ async function saveDictionaries(dictionaries) {
   for (const [fileName, content] of Object.entries(dictionaries)) {
     const filePath = path.join(dirPath, fileName);
     await fs.writeFile(filePath, content);
-    console.log(`[MAIN] Diccionario guardado: ${fileName}`);
   }
 }
 
-exports.handler = async (event, context) => {
-  console.log('[MAIN] Iniciando procesamiento de solicitud...');
-  console.log('[MAIN] Tiempo límite de ejecución:', context.getRemainingTimeInMillis(), 'ms');
-  console.log(`[MAIN] Entorno: ${process.env.AWS_EXECUTION_ENV ? 'Lambda' : 'Local'}`);
-  
+exports.handler = async (event, context) => {  
   try {
-    console.log('[MAIN] Analizando cuerpo de la solicitud...');
     let requestBody;
     if (typeof event.body === 'string') {
       requestBody = JSON.parse(event.body);
     } else {
       requestBody = event.body || {};
     }
-    
-    console.log('[MAIN] Configurando entorno...');
     if (requestBody.dictionaries) {
-      console.log('[MAIN] Guardando diccionarios proporcionados...');
       await saveDictionaries(requestBody.dictionaries);
     }
-    
-    console.log('[MAIN] Precargando diccionarios...');
     await preloadDictionaries();
-    
-    console.log('[MAIN] Extrayendo URLs de documentos...');
     const documentUrls = extractDocumentUrls(requestBody);
     
     if (Object.keys(documentUrls).length === 0) {
@@ -55,17 +42,10 @@ exports.handler = async (event, context) => {
         received_fields: Object.keys(requestBody)
       });
     }
-    
-    console.log(`[MAIN] Se encontraron ${Object.keys(documentUrls).length} documentos para procesar`);
-    console.log('[MAIN] URLs a procesar:', Object.keys(documentUrls));
-    
-    console.log('[MAIN] Descargando documentos...');
     const startDownload = Date.now();
     
     try {
       const downloadedFiles = await downloadDocuments(Object.values(documentUrls));
-      console.log(`[MAIN] Descarga completada en ${Date.now() - startDownload}ms, ${downloadedFiles.length} archivos descargados`);
-      
       if (downloadedFiles.length === 0) {
         console.warn('[MAIN] No se descargó ningún archivo');
         return formatResponse(400, {
@@ -73,17 +53,11 @@ exports.handler = async (event, context) => {
           message: 'No se pudo descargar ningún archivo de las URLs proporcionadas'
         });
       }
-      
-      console.log('[MAIN] Procesando documentos...');
       const startProcessing = Date.now();
       const result = await processDocuments(requestBody, downloadedFiles, documentUrls);
-      console.log(`[MAIN] Procesamiento completado en ${Date.now() - startProcessing}ms`);
-      
-      console.log('[MAIN] Generando respuesta exitosa...');
       return formatResponse(200, result);
       
     } catch (downloadError) {
-      console.error('[MAIN] Error durante la descarga:', downloadError.message);
       
       if (downloadError.message.includes('ERROR_PERMISOS_GOOGLE_DRIVE')) {
         console.log('[MAIN] Error de permisos de Google Drive detectado');
@@ -165,10 +139,8 @@ exports.handler = async (event, context) => {
     });
     
   } finally {
-    console.log('[MAIN] Limpiando archivos temporales...');
     try {
       await cleanupTempFiles();
-      console.log('[MAIN] Limpieza completada exitosamente.');
     } catch (cleanupError) {
       console.error('[MAIN] Error durante la limpieza:', cleanupError.message);
     }
@@ -177,8 +149,6 @@ exports.handler = async (event, context) => {
 };
 
 function extractDocumentUrls(inputData) {
-  console.log('[MAIN] Extrayendo URLs de los campos de entrada...');
-  
   const documentUrls = {};
   
   const documentFields = [
@@ -194,36 +164,42 @@ function extractDocumentUrls(inputData) {
     { field: 'Recibo_de_pago_derechos_de_grado', key: 'recibo_pago' }
   ];
   
+  // SOLO verificar TyT
+  const pruebaT_T_value = inputData['Prueba_T_T'];
+  if (pruebaT_T_value) {
+    console.log(`[TYT] 🎯 CAMPO Prueba_T_T ENCONTRADO: ${pruebaT_T_value.substring(0, 60)}...`);
+  } else {
+    console.log(`[TYT] ❌ CAMPO Prueba_T_T NO ENCONTRADO`);
+    console.log(`[TYT] 📋 Campos disponibles:`, Object.keys(inputData));
+    return {}; // Si no hay TyT, no procesar nada
+  }
+  
   for (const doc of documentFields) {
     const fieldValue = inputData[doc.field];
     
     if (fieldValue && typeof fieldValue === 'string') {
       if (fieldValue.includes('drive.google.com') || fieldValue.includes('docs.google.com')) {
         documentUrls[doc.key] = fieldValue;
-        console.log(`[MAIN] URL encontrada para ${doc.key}: ${fieldValue.substring(0, 50)}...`);
-      } else if (fieldValue.includes('http')) {
-        console.log(`[MAIN] URL no es de Google Drive para ${doc.key}: ${fieldValue.substring(0, 50)}...`);
-      } else {
-        console.log(`[MAIN] Campo ${doc.field} no contiene una URL válida: ${fieldValue}`);
+        
+        // SOLO log para TyT
+        if (doc.key === 'prueba_tt') {
+          console.log(`[TYT] ✅ URL TyT MAPEADA CORRECTAMENTE`);
+        }
       }
-    } else if (fieldValue !== null && fieldValue !== undefined) {
-      console.log(`[MAIN] Campo ${doc.field} no es string: ${typeof fieldValue} = ${fieldValue}`);
     }
   }
   
-  console.log(`[MAIN] Total de URLs válidas encontradas: ${Object.keys(documentUrls).length}`);
-  
-  if (Object.keys(documentUrls).length === 0) {
-    console.warn('[MAIN] No se encontraron URLs válidas de Google Drive en ningún campo');
-    console.log('[MAIN] Campos disponibles en la entrada:', Object.keys(inputData));
+  // Verificar mapeo final de TyT
+  if (documentUrls.prueba_tt) {
+    console.log(`[TYT] ✅ TyT INCLUIDO EN DOCUMENTOS A PROCESAR`);
+  } else {
+    console.log(`[TYT] ❌ TyT NO INCLUIDO EN DOCUMENTOS A PROCESAR`);
   }
   
   return documentUrls;
 }
 
 function formatResponse(statusCode, body) {
-  console.log(`[MAIN] Formateando respuesta con código ${statusCode}`);
-  
   const response = {
     statusCode,
     headers: {
@@ -236,15 +212,6 @@ function formatResponse(statusCode, body) {
     },
     body: JSON.stringify(body, null, statusCode >= 400 ? 2 : 0)
   };
-  
-  const responseSize = JSON.stringify(response).length;
-  console.log(`[MAIN] Tamaño de la respuesta: ${responseSize} bytes`);
-  
-  if (statusCode >= 400) {
-    console.log(`[MAIN] Respuesta de error generada:`, JSON.stringify(body, null, 2));
-  } else {
-    console.log(`[MAIN] Respuesta exitosa generada para ID: ${body.ID || 'unknown'}`);
-  }
   
   return response;
 }

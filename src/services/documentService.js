@@ -4,7 +4,6 @@ const { extractTextFromDocument, validateTextWithDictionary, extractInformation,
 const { getDictionaryForDocumentType } = require('./dictionaryService');
 
 async function processDocuments(inputData, downloadedFiles, documentUrls) {
-  console.log(`[DOC] Iniciando procesamiento de documentos...`);
   
   const output = {
     ID: inputData.ID,
@@ -42,7 +41,6 @@ async function processDocuments(inputData, downloadedFiles, documentUrls) {
     for (const [docType, url] of Object.entries(documentUrls)) {
       if (file.originalUrl === url) {
         documentMap[docType] = file;
-        console.log(`[DOC] Mapeado: ${file.fileName} -> ${docType}`);
         break;
       }
     }
@@ -58,16 +56,12 @@ async function processDocuments(inputData, downloadedFiles, documentUrls) {
   await processDocumentType(documentMap, 'recibo_pago', output, 'RecibiDePagoDerechosDeGrado', inputData);
   await processDocumentType(documentMap, 'encuesta_m0', output, 'Encuesta_M0', inputData);
   await processDocumentType(documentMap, 'acta_homologacion', output, 'Acta_Homologacion', inputData);
-  
-  console.log(`[DOC] Procesamiento completo`);
   return output;
 }
 
 async function processDocumentType(documentMap, docType, output, outputField, inputData) {
-  console.log(`[DOC] Procesando: ${docType} -> ${outputField}`);
-  
+
   if (!documentMap[docType]) {
-    console.log(`[DOC] Documento ${docType} no encontrado - mantiene estado N/A`);
     return; 
   }
   
@@ -75,7 +69,6 @@ async function processDocumentType(documentMap, docType, output, outputField, in
     const file = documentMap[docType];
     
     if (!await fileExists(file.path)) {
-      console.log(`[DOC] Archivo ${docType} no válido`);
       output[outputField] = "Revision Manual";
       return;
     }
@@ -87,9 +80,7 @@ async function processDocumentType(documentMap, docType, output, outputField, in
     if (validationResult.extractedInfo) {
       await updateExtractedInformation(output, docType, validationResult.extractedInfo, inputData);
     }
-    
-    console.log(`[DOC] ${docType} procesado: ${output[outputField]}`);
-    
+
   } catch (error) {
     console.error(`[DOC] Error procesando ${docType}:`, error);
     output[outputField] = "Revision Manual";
@@ -97,7 +88,6 @@ async function processDocumentType(documentMap, docType, output, outputField, in
 }
 
 function mapDocumentStatus(originalStatus) {
-  console.log(`[STATUS-MAP] Mapeando estado: "${originalStatus}"`);
   
   switch (originalStatus) {
     case "Documento Valido":
@@ -114,13 +104,10 @@ function mapDocumentStatus(originalStatus) {
 }
 
 async function validateDocument(file, docType, inputData) {
-  console.log(`[VALIDATE] Validando documento: ${docType}`);
-  
+
   const fileStats = await fs.stat(file.path);
-  console.log(`[VALIDATE] Tamaño del archivo: ${fileStats.size} bytes`);
   
   if (fileStats.size < 1000) {
-    console.log(`[VALIDATE] Archivo muy pequeño, marcando para revisión`);
     return { status: "Revisión Manual" };
   }
   
@@ -128,22 +115,17 @@ async function validateDocument(file, docType, inputData) {
     const documentBuffer = await fs.readFile(file.path);
     const headerCheck = documentBuffer.slice(0, 20).toString();
     
-    console.log(`[VALIDATE] Header detectado: "${headerCheck.substring(0, 10)}"`);
-    
     if (headerCheck.startsWith('<!DOCTYPE') || headerCheck.startsWith('<html') || headerCheck.startsWith('<!do')) {
-      console.log(`[VALIDATE] Archivo HTML detectado, pero tamaño grande (${fileStats.size} bytes)`);
       
       const isValidBySize = validateBySize(fileStats.size, docType);
       
       if (isValidBySize) {
-        console.log(`[VALIDATE] Archivo HTML válido por tamaño para tipo: ${docType}`);
         return { 
           status: "Documento Valido",
           validationMethod: "size-html",
           note: "HTML file with valid size - assuming Google Drive serving issue"
         };
       } else {
-        console.log(`[VALIDATE] Archivo HTML pero tamaño no válido para tipo: ${docType}`);
         return { status: "Revisión Manual" };
       }
     }
@@ -154,7 +136,6 @@ async function validateDocument(file, docType, inputData) {
     const isValidByText = validateTextWithDictionary(extractedText, dictionary);
     
     if (isValidByText) {
-      console.log(`[VALIDATE] Documento válido por contenido`);
       const extractedInfo = await extractInformation(extractedText, docType);
       return { 
         status: "Documento Valido", 
@@ -162,19 +143,16 @@ async function validateDocument(file, docType, inputData) {
         validationMethod: "textract"
       };
     } else {
-      console.log(`[VALIDATE] Contenido no válido, aplicando validación alternativa`);
       return await alternativeValidation(file, docType, fileStats);
     }
     
   } catch (error) {
-    console.log(`[VALIDATE] Error procesando: ${error.message}`);
     return await alternativeValidation(file, docType, fileStats);
   }
 }
 
 function validateBySize(fileSize, docType) {
-  console.log(`[SIZE-VALIDATE] Validando por tamaño: ${fileSize} bytes para tipo: ${docType}`);
-  
+
   const minSizes = {
     'cedula': 50000,
     'diploma_bachiller': 100000,
@@ -191,35 +169,27 @@ function validateBySize(fileSize, docType) {
   const minSize = minSizes[docType] || 25000;
   const isValid = fileSize >= minSize;
   
-  console.log(`[SIZE-VALIDATE] Tamaño mínimo para ${docType}: ${minSize}, actual: ${fileSize}, válido: ${isValid}`);
-  
   return isValid;
 }
 
 async function alternativeValidation(file, docType, fileStats) {
-  console.log(`[ALT-VALIDATE] Usando validación alternativa para: ${docType}`);
-  
+
   if (validateBySize(fileStats.size, docType)) {
-    console.log(`[ALT-VALIDATE] Válido por tamaño alternativo`);
     return { 
       status: "Documento Valido", 
       validationMethod: "alternative-size" 
     };
   }
-  
-  console.log(`[ALT-VALIDATE] Validación alternativa falló`);
+
   return { status: "Revisión Manual" };
 }
 
 async function updateExtractedInformation(output, docType, extractedInfo, inputData) {
-  console.log(`[UPDATE] Actualizando información extraída para: ${docType}`);
-  
   if (docType === 'cedula' && extractedInfo.numDocumento) {
     output.Num_Documento_Extraido = extractedInfo.numDocumento;
     
     const inputDocNum = (output.NumeroDocumento || '').replace(/\D/g, '');
     output.Num_Doc_Valido = (extractedInfo.numDocumento === inputDocNum) ? "SI" : "NO";
-    console.log(`[UPDATE] Número documento: ${extractedInfo.numDocumento}, válido: ${output.Num_Doc_Valido}`);
   }
   
   if (docType === 'icfes') {
@@ -247,7 +217,6 @@ async function updateExtractedInformation(output, docType, extractedInfo, inputD
       const inputDocNum = (output.NumeroDocumento || '').replace(/\D/g, '');
       const extractedDocNum = extractedInfo.numDocumento.replace(/\D/g, '');
       output.Num_Doc_Valido = (extractedDocNum === inputDocNum) ? "SI" : "NO";
-      console.log(`[UPDATE] Validación documento - Input: ${inputDocNum}, Extraído: ${extractedDocNum}, Válido: ${output.Num_Doc_Valido}`);
     }
 
     if (extractedInfo.institucion) {

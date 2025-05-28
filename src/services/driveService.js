@@ -17,8 +17,7 @@ if (process.env.AWS_EXECUTION_ENV) {
 }
 
 function extractFileIdFromUrl(url) {
-  console.log(`[DRIVE] Procesando URL: ${url.substring(0, 50)}...`);
-  
+
   const regexPatterns = [
     /\/file\/d\/([^/]+)/,
     /id=([^&]+)/,
@@ -28,7 +27,6 @@ function extractFileIdFromUrl(url) {
   for (const regex of regexPatterns) {
     const match = url.match(regex);
     if (match && match[1]) {
-      console.log(`[DRIVE] File ID extraído: ${match[1]}`);
       return match[1];
     }
   }
@@ -38,7 +36,6 @@ function extractFileIdFromUrl(url) {
 
 async function downloadFileFromDriveWithAuth(fileId, tempDir, oauth2Client) {
   try {
-    console.log(`[DRIVE-AUTH] Descargando archivo autenticado: ${fileId}`);
     
     const drive = google.drive({ version: 'v3', auth: oauth2Client });
     
@@ -46,9 +43,7 @@ async function downloadFileFromDriveWithAuth(fileId, tempDir, oauth2Client) {
       fileId: fileId,
       fields: 'name,mimeType,size'
     });
-    
-    console.log(`[DRIVE-AUTH] Archivo encontrado: ${fileMetadata.data.name}`);
-    console.log(`[DRIVE-AUTH] Tipo MIME: ${fileMetadata.data.mimeType}`);
+
     
     const fileName = fileMetadata.data.name || `${fileId}.pdf`;
     const filePath = path.join(tempDir, fileName);
@@ -64,7 +59,6 @@ async function downloadFileFromDriveWithAuth(fileId, tempDir, oauth2Client) {
       response.data.on('error', reject);
       writer.on('error', reject);
       writer.on('finish', () => {
-        console.log(`[DRIVE-AUTH] Archivo descargado: ${fileName}`);
         resolve(filePath);
       });
       response.data.pipe(writer);
@@ -88,12 +82,11 @@ async function downloadFileFromDriveWithAuth(fileId, tempDir, oauth2Client) {
 async function downloadFileFromDrive(fileId, tempDir, googleCredentials = null) {
   if (googleCredentials && googleCredentials.client_id && googleCredentials.client_secret) {
     try {
-      console.log(`[DRIVE] Intentando descarga autenticada para: ${fileId}`);
+
       
       const oauth2Client = new google.auth.OAuth2(
         googleCredentials.client_id,
         googleCredentials.client_secret,
-        'urn:ietf:wg:oauth:2.0:oob'
       );
       
       if (googleCredentials.access_token) {
@@ -150,8 +143,6 @@ async function downloadFileFromDrive(fileId, tempDir, googleCredentials = null) 
       const fileName = `${fileId}.pdf`;
       const filePath = path.join(tempDir, fileName);
       await fs.writeFile(filePath, contentBuffer);
-      
-      console.log(`[DRIVE] Descarga pública exitosa: ${fileName}`);
       return filePath;
       
     } catch (urlError) {
@@ -181,9 +172,6 @@ async function downloadDocuments(fileUrls, googleCredentials = null) {
   const tempDir = await createTempDirectory();
   const downloadedFiles = [];
   const failedFiles = [];
-  
-  console.log(`[DRIVE] Iniciando descarga de ${fileUrls.length} archivos`);
-  console.log(`[DRIVE] Entorno: ${process.env.AWS_EXECUTION_ENV ? 'Lambda' : 'Local'}`);
   if (!googleCredentials) {
     const clientId = process.env.GOOGLE_CLIENT_ID;
     const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
@@ -191,12 +179,10 @@ async function downloadDocuments(fileUrls, googleCredentials = null) {
     
     if (clientId && clientSecret && refreshToken) {
       try {
-        console.log(`[DRIVE] Intentando autenticación automática desde variables de entorno...`);
         const authService = new GoogleAuthService(clientId, clientSecret);
         googleCredentials = await authService.initializeAuth();
-        console.log(`[DRIVE] Autenticación automática exitosa`);
+        console.log('[DEBUG] Access token:', googleCredentials?.access_token);
       } catch (authError) {
-        console.log(`[DRIVE] Autenticación automática falló: ${authError.message}`);
         if (authError.message.includes('NO_REFRESH_TOKEN')) {
           throw new Error(`ERROR_TOKENS_NO_CONFIGURADOS: La variable GOOGLE_REFRESH_TOKEN no está configurada. Ejecutar script setup-lambda-tokens.js para obtenerla.`);
         }
@@ -214,9 +200,7 @@ async function downloadDocuments(fileUrls, googleCredentials = null) {
       console.log(`[DRIVE] REFRESH_TOKEN: ${refreshToken ? 'Presente' : 'Ausente'}`);
     }
   }
-  
-  console.log(`[DRIVE] Credenciales Google disponibles: ${googleCredentials ? 'Sí' : 'No'}`);
-  
+
   for (const url of fileUrls) {
     try {
       const fileId = extractFileIdFromUrl(url);
@@ -231,8 +215,7 @@ async function downloadDocuments(fileUrls, googleCredentials = null) {
         fileName: path.basename(filePath),
         size: stats.size
       });
-      
-      console.log(`[DRIVE] Éxito: ${path.basename(filePath)} (${stats.size} bytes)`);
+  
       
     } catch (error) {
       console.error(`[DRIVE] Error procesando ${url}:`, error.message);
@@ -251,8 +234,7 @@ async function downloadDocuments(fileUrls, googleCredentials = null) {
       });
     }
   }
-  
-  console.log(`[DRIVE] Descarga completa: ${downloadedFiles.length} exitosos, ${failedFiles.length} fallidos`);
+
   
   if (downloadedFiles.length === 0 && failedFiles.length > 0) {
     const permissionErrors = failedFiles.filter(f => f.errorType === 'PERMISSION_ERROR');

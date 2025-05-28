@@ -5,11 +5,10 @@ const path = require('path');
 const { execSync } = require('child_process');
 const archiver = require('archiver');
 
-// Configuración
 const CONFIG = {
   sourceDir: path.join(__dirname),
   buildDir: path.join(__dirname, 'build'),
-  zipFile: path.join(__dirname, 'lambda-deployment.zip')
+  zipFile: path.join(__dirname, 'lambda-deployment-prod.zip')
 };
 
 async function cleanPrevious() {
